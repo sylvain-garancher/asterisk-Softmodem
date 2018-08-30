@@ -47,12 +47,17 @@
 		l or m: least or most significant bit first (default: m)
 		d(...): amount of data bits (5-8, default: 8)
 		s(...): amount of stop bits (1-2, default: 1)
+		e or o: add even or odd parity bit
 		u:      Send Ulm Relay Protocol header to Telnet server
 		n:      Send NULL-Byte to modem after carrier detection (Btx specific)
 
 	To act as a "Btx Vermittlungsstelle" (German videotex system) using V.23, 8 data bits, 1 stop bit and sending a NULL byte upon carrier detection and connecting to a "twistedUlm" server on port 8289 (thus sending the ULM header):
 
 	exten => 190,1,Softmodem(localhost, 8289, v(V23)ld(8)s(1)un)
+
+	To accept calls fom UK Prestel terminals, using V.23, 7 data bits, Even parity, 1 stop bit -
+
+	exten => 618,n,Softmodem(localhost, 6502, v(V23),ld(7)es(1)t(-8))
 
 	The modem seems to work fine with VOIP as long as you use a codec like G.711
 	(alaw/ulaw). Please deactivate any echo cancellation you might use.

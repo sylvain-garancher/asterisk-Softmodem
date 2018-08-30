@@ -6,6 +6,8 @@
  * Based on app_fax.c by Dmitry Andrianov <asterisk@dima.spb.ru>
  * and Steve Underwood <steveu@coppice.org>
  *
+ * Parity options added 2018 Rob O'Donnell
+ *
  * This program is free software, distributed under the terms of
  * the GNU General Public License
  *
@@ -18,7 +20,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
+//ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <string.h>
 #include <stdlib.h>
@@ -77,8 +79,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 	"  l or m: least or most significant bit first (default: m)\n"
 	"  d(...): amount of data bits (5-8, default: 8)\n"
 	"  s(...): amount of stop bits (1-2, default: 1)\n"
+	"  e or o: add even or odd parity bit
 	"  u:      Send ULM header to Telnet server (Btx)\n"
-	"  n:      Send NULL-Byte to modem after carrier detection (Btx)\n" **/
+	"  n:      Send NULL-Byte to modem after carrier detection (Btx)\n"
+	**/
 
 static const char app[] = "Softmodem";
 
@@ -92,6 +96,8 @@ enum {
 	OPT_STOPBITS =       (1 << 6),
 	OPT_ULM_HEADER =     (1 << 7),
 	OPT_NULL =           (1 << 8),
+	OPT_EVEN_PARITY = 	 (1 << 9),
+	OPT_ODD_PARITY = 	 (1 << 10)
 };
 
 enum {
@@ -113,6 +119,8 @@ AST_APP_OPTIONS(additional_options, BEGIN_OPTIONS
 	AST_APP_OPTION('m', OPT_MSB_FIRST),
 	AST_APP_OPTION_ARG('d', OPT_DATABITS, OPT_ARG_DATABITS),
 	AST_APP_OPTION_ARG('s', OPT_STOPBITS, OPT_ARG_STOPBITS),
+	AST_APP_OPTION('e', OPT_EVEN_PARITY),
+	AST_APP_OPTION('o', OPT_ODD_PARITY),
 	AST_APP_OPTION('u', OPT_ULM_HEADER),
 	AST_APP_OPTION('n', OPT_NULL),
 END_OPTIONS );
@@ -141,6 +149,7 @@ typedef struct {
 	int ulmheader;
 	int sendnull;
 	volatile int finished;
+	int	paritytype;
 } modem_session;
 
 #define MODEM_BITBUFFER_SIZE 16
@@ -167,6 +176,10 @@ static void modem_put_bit(void *user_data, int bit) {
 
 	int databits = rx->session->databits;
 	int stopbits = rx->session->stopbits;
+	int paritybits = 0;
+
+	if (rx->session->paritytype)
+		paritybits = 1;
 
 	// modem recognised us and starts responding through sending it's pilot signal
 	if (rx->state->answertone<=0) {
@@ -195,11 +208,11 @@ static void modem_put_bit(void *user_data, int bit) {
 				if (rx->readpos>=MODEM_BITBUFFER_SIZE) rx->readpos=0;
 			}
 
-			// full byte = 1 startbit + databits + stopbits
-			while (rx->fill>=(1+databits+stopbits)) {
+			// full byte = 1 startbit + databits + paritybits + stopbits
+			while (rx->fill>=(1+databits+paritybits+stopbits)) {
 				if (rx->bitbuffer[rx->readpos]==0) {	// check for startbit
-					stop=(rx->readpos+1+databits)%MODEM_BITBUFFER_SIZE;
-					stop2=(rx->readpos+2+databits)%MODEM_BITBUFFER_SIZE;
+					stop=(rx->readpos+1+paritybits+databits)%MODEM_BITBUFFER_SIZE;
+					stop2=(rx->readpos+2+paritybits+databits)%MODEM_BITBUFFER_SIZE;
 					if ( (rx->bitbuffer[stop]==1) &&
 						(stopbits==1 || (stopbits==2 && rx->bitbuffer[stop2]==1)) )
 					{	// check for stopbit -> valid framing
@@ -215,11 +228,14 @@ static void modem_put_bit(void *user_data, int bit) {
 							}
 						}
 
-						send(rx->sock, &byte, 1, 0);
-
+						if ( !paritybits || ( paritybits &&
+									( rx->bitbuffer[(rx->readpos + databits + 1)%MODEM_BITBUFFER_SIZE] ==
+										( (rx->session->paritytype == 2) ^ __builtin_parity(byte) ) ) ) ) {
+							send(rx->sock, &byte, 1, 0);
+						} // else invalid parity, ignore byte
+						// TODO - why does this increment by 10?
 						rx->readpos=(rx->readpos+10)%MODEM_BITBUFFER_SIZE;
 						rx->fill-=10;
-
 					} else {	// no valid framing (no stopbit), remove first bit and maybe try again
 						rx->fill--;
 						rx->readpos++;
@@ -247,6 +263,10 @@ static int modem_get_bit(void *user_data) {
 
 	int databits=tx->session->databits;
 	int stopbits=tx->session->stopbits;
+	int paritybits = 0;
+
+	if (tx->session->paritytype)
+		paritybits = 1;
 
 	// no new data in send (bit)buffer,
 	// either we just picked up the line, the terminal started to respond,
@@ -257,8 +277,11 @@ static int modem_get_bit(void *user_data) {
 			rc=recv(tx->sock,&byte, 1, 0);
 			if (rc>0) {
 				// new data on socket, we put that byte into our bitbuffer
-				for (i=0; i<(databits+stopbits); i++) {
-					if (i>=databits) tx->bitbuffer[tx->writepos]=1;	// stopbits
+				for (i=0; i<(databits+paritybits+stopbits); i++) {
+					if (paritybits && (i == databits) ) {
+						tx->bitbuffer[tx->writepos] = (tx->session->paritytype == 2) ^ __builtin_parity( byte);
+					} else if ( i >= databits )
+						tx->bitbuffer[tx->writepos]=1;	// stopbits
 					else {	// databits
 						if (tx->session->lsb) {
 							if (byte & (1<<i)) tx->bitbuffer[tx->writepos]=1;
@@ -288,8 +311,10 @@ static int modem_get_bit(void *user_data) {
 // 				ast_log(LOG_WARNING,"Got TE's tone, will send null-byte.\n");
 
 				if (tx->session->sendnull) { // send null byte
-					for (i=0; i<(databits+stopbits); i++) {
-						if (i>=databits) tx->bitbuffer[tx->writepos]=1;	//stopbits
+					for (i=0; i<(databits+paritybits+stopbits); i++) {
+						if (paritybits && (i == databits) )
+							tx->bitbuffer[tx->writepos] = (tx->session->paritytype == 2) ^ __builtin_parity( 0 );	// yes I know!
+						else if (i>=databits) tx->bitbuffer[tx->writepos]=1;	//stopbits
 						else tx->bitbuffer[tx->writepos]=0; //databits
 						tx->writepos++;
 						if (tx->writepos>=MODEM_BITBUFFER_SIZE) tx->writepos=0;
@@ -634,6 +659,7 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 	session.lsb=0;
 	session.databits=8;
 	session.stopbits=1;
+	session.paritytype=0;
 	session.ulmheader=0;
 	session.sendnull=0;
 
@@ -710,6 +736,17 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 					return -1;
 				}
 			}
+		}
+
+		if (ast_test_flag(&options, OPT_EVEN_PARITY)) {
+			if (ast_test_flag(&options, OPT_ODD_PARITY)) {
+				ast_log(LOG_ERROR, "Please only set e or o (parity) flag, not both.\n");
+				return -1;
+			}
+			session.paritytype = 1;
+		}
+		if (ast_test_flag(&options, OPT_ODD_PARITY)) {
+			session.paritytype = 2;
 		}
 
 		if (ast_test_flag(&options, OPT_ULM_HEADER)) {

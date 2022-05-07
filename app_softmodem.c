@@ -18,6 +18,9 @@
 	<support_level>extended</support_level>
 ***/
 
+/* Needed for spandsp headers */
+#define ASTMM_LIBC ASTMM_IGNORE
+
 #include "asterisk.h"
 
 //ASTERISK_FILE_VERSION(__FILE__, "$Revision$")

@@ -2,7 +2,7 @@
  * Softmodem for Asterisk
  *
  * 2010, Christian Groeger <code@proquari.at>
- * 
+ *
  * Based on app_fax.c by Dmitry Andrianov <asterisk@dima.spb.ru>
  * and Steve Underwood <steveu@coppice.org>
  *
@@ -15,7 +15,7 @@
 	 <depend>spandsp</depend>
 	<support_level>extended</support_level>
 ***/
- 
+
 #include "asterisk.h"
 
 ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
@@ -162,12 +162,12 @@ typedef struct {
 // this is called by spandsp whenever it filtered a new bit from the line
 static void modem_put_bit(void *user_data, int bit) {
 	int stop, stop2, i;
-	
+
 	modem_data *rx = (modem_data*) user_data;
-	
+
 	int databits = rx->session->databits;
 	int stopbits = rx->session->stopbits;
-	
+
 	// modem recognised us and starts responding through sending it's pilot signal
 	if (rx->state->answertone<=0) {
 		if (bit==SIG_STATUS_CARRIER_UP) {
@@ -180,21 +180,21 @@ static void modem_put_bit(void *user_data, int bit) {
 	else {
 		// ignore other spandsp-stuff
 		if (bit==1 || bit==0) {
-			
+
 			// insert bit into our bitbuffer
 			rx->bitbuffer[rx->writepos]=bit;
 			rx->writepos++;
 			if (rx->writepos>=MODEM_BITBUFFER_SIZE) rx->writepos=0;
-			
+
 			if (rx->fill<MODEM_BITBUFFER_SIZE) {
 				rx->fill++;
-			} else { 
+			} else {
 				// our bitbuffer is full, this probably won't happen
 	// 			printf("full buffer\n");
 				rx->readpos++;
 				if (rx->readpos>=MODEM_BITBUFFER_SIZE) rx->readpos=0;
 			}
-			
+
 			// full byte = 1 startbit + databits + stopbits
 			while (rx->fill>=(1+databits+stopbits)) {
 				if (rx->bitbuffer[rx->readpos]==0) {	// check for startbit
@@ -204,7 +204,7 @@ static void modem_put_bit(void *user_data, int bit) {
 						(stopbits==1 || (stopbits==2 && rx->bitbuffer[stop2]==1)) )
 					{	// check for stopbit -> valid framing
 						char byte=0;
-						
+
 						for(i=0; i<databits; i++) {	// generate byte
 							if (rx->session->lsb) { //lsb first
 								if (rx->bitbuffer[(rx->readpos+1+i)%MODEM_BITBUFFER_SIZE])
@@ -214,12 +214,12 @@ static void modem_put_bit(void *user_data, int bit) {
 									byte |= (1<<i);
 							}
 						}
-						
+
 						send(rx->sock, &byte, 1, 0);
-						
+
 						rx->readpos=(rx->readpos+10)%MODEM_BITBUFFER_SIZE;
 						rx->fill-=10;
-						
+
 					} else {	// no valid framing (no stopbit), remove first bit and maybe try again
 						rx->fill--;
 						rx->readpos++;
@@ -233,9 +233,9 @@ static void modem_put_bit(void *user_data, int bit) {
 			}
 		}
 	}
-	
-	
-	
+
+
+
 	return;
 }
 
@@ -244,11 +244,11 @@ static int modem_get_bit(void *user_data) {
 	modem_data *tx = (modem_data*) user_data;
 	char byte=0;
 	int i, rc;
-	
+
 	int databits=tx->session->databits;
 	int stopbits=tx->session->stopbits;
-	
-	// no new data in send (bit)buffer, 
+
+	// no new data in send (bit)buffer,
 	// either we just picked up the line, the terminal started to respond,
 	// than we check for new data on the socket
 	// or there's no new data, so we send 1s (mark)
@@ -286,7 +286,7 @@ static int modem_get_bit(void *user_data) {
 			}
 			if ( tx->state->answertone>0 ) {
 // 				ast_log(LOG_WARNING,"Got TE's tone, will send null-byte.\n");
-				
+
 				if (tx->session->sendnull) { // send null byte
 					for (i=0; i<(databits+stopbits); i++) {
 						if (i>=databits) tx->bitbuffer[tx->writepos]=1;	//stopbits
@@ -296,7 +296,7 @@ static int modem_get_bit(void *user_data) {
 					}
 				}
 				tx->state->nulsent=1;
-				
+
 				if (tx->session->ulmheader) {
 					// send ULM relay protocol header, include connection speed
 					float tx_baud,rx_baud;
@@ -319,24 +319,24 @@ static int modem_get_bit(void *user_data) {
 						tx_baud=0;
 						rx_baud=0;
 					}
-					
+
 					char header[60];
-					int headerlength=sprintf(header, 
+					int headerlength=sprintf(header,
 						"Version: 1\r\nTXspeed: %.2f\r\nRXspeed: %.2f\r\n\r\n",
 						tx_baud/(1+databits+stopbits), rx_baud/(1+databits+stopbits));
 					send(tx->sock, header, headerlength, 0);
 				}
-				
+
 				if (tx->session->sendnull)
 					return 0;
 				else
 					return 1;
 			}
 		}
-		
-		// no new data on socket, NULL-byte already sent, send mark-frequency 
+
+		// no new data on socket, NULL-byte already sent, send mark-frequency
 		return 1;
-		
+
 	} else {
 		// there still is data in the bitbuffer, so we just send that out
 		i=tx->bitbuffer[tx->readpos];
@@ -357,7 +357,7 @@ static int fsk_generator_generate(struct ast_channel *chan, void *data, int len,
 	fsk_tx_state_t *tx = (fsk_tx_state_t*) data;
 	uint8_t buffer[AST_FRIENDLY_OFFSET + MAX_SAMPLES * sizeof(uint16_t)];
 	int16_t *buf = (int16_t *) (buffer + AST_FRIENDLY_OFFSET);
-	
+
 	struct ast_frame outf = {
 		.frametype = AST_FRAME_VOICE,
 		.subclass.format = ast_format_slin,
@@ -369,7 +369,7 @@ static int fsk_generator_generate(struct ast_channel *chan, void *data, int len,
 		samples = MAX_SAMPLES;
 	}
 
-	
+
 	if ((len = fsk_tx(tx, buf, samples)) > 0) {
 		outf.samples = len;
 		AST_FRAME_SET_BUFFER(&outf, buffer, AST_FRIENDLY_OFFSET, len * sizeof(int16_t));
@@ -389,7 +389,7 @@ static int v22_generator_generate(struct ast_channel *chan, void *data, int len,
 	v22bis_state_t *tx = (v22bis_state_t*) data;
 	uint8_t buffer[AST_FRIENDLY_OFFSET + MAX_SAMPLES * sizeof(uint16_t)];
 	int16_t *buf = (int16_t *) (buffer + AST_FRIENDLY_OFFSET);
-	
+
 	struct ast_frame outf = {
 		.frametype = AST_FRAME_VOICE,
 		.subclass.format = ast_format_slin,
@@ -401,7 +401,7 @@ static int v22_generator_generate(struct ast_channel *chan, void *data, int len,
 		samples = MAX_SAMPLES;
 	}
 
-	
+
 	if ((len = v22bis_tx(tx, buf, samples)) > 0) {
 		outf.samples = len;
 		AST_FRAME_SET_BUFFER(&outf, buffer, AST_FRIENDLY_OFFSET, len * sizeof(int16_t));
@@ -428,17 +428,17 @@ static int softmodem_communicate(modem_session *s) {
 	int res = -1;
 	struct ast_format *original_read_fmt;
 	struct ast_format *original_write_fmt;
-	
+
 	modem_data rxdata, txdata;
-	
+
 	struct ast_frame *inf = NULL;
-	
+
 	fsk_tx_state_t *modem_tx;
 	fsk_rx_state_t *modem_rx;
-	
+
 	v22bis_state_t *v22_modem;
-	
-	
+
+
 	original_read_fmt = ast_channel_readformat(s->chan);
 	if (original_read_fmt != ast_format_slin) {
 		res=ast_set_read_format(s->chan, ast_format_slin);
@@ -456,50 +456,50 @@ static int softmodem_communicate(modem_session *s) {
 			return res;
 		}
 	}
-	
+
 	int sock;
 	struct sockaddr_in server;
 	struct hostent *hp;
 	struct ast_hostent ahp;
-	
+
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock < 0) {
 		ast_log(LOG_WARNING, "Could not create socket.\n");
 		return res;
 	}
-	
+
 	server.sin_family=AF_INET;
 	hp=ast_gethostbyname(s->host, &ahp);
 	memcpy( (char *)&server.sin_addr, hp->h_addr, hp->h_length);
 	//bcopy ( hp->h_addr, &(server.sin_addr.s_addr), hp->h_length);
 	server.sin_port=htons(s->port);
-	
+
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
 		ast_log(LOG_WARNING, "Cannot connect to remote host.\n");
 		return res;
 	}
-	
+
 	fcntl(sock, F_SETFL, O_NONBLOCK);
-	
-	
+
+
 	connection_state state;
 	state.answertone=-1;	//no carrier yet
 	state.nulsent=0;
-	
+
 	rxdata.sock=sock;
 	rxdata.writepos=0;
 	rxdata.readpos=0;
 	rxdata.fill=0;
 	rxdata.state= &state;
 	rxdata.session=s;
-	
+
 	txdata.sock=sock;
 	txdata.writepos=0;
 	txdata.readpos=0;
 	txdata.fill=0;
 	txdata.state= &state;
 	txdata.session=s;
-	
+
 	// initialise spandsp-stuff, give it our callback-functions
 	if (s->version==VERSION_V21) {
 		modem_tx = fsk_tx_init(NULL, &preset_fsk_specs[FSK_V21CH2], modem_get_bit, &txdata);
@@ -523,7 +523,7 @@ static int softmodem_communicate(modem_session *s) {
 		ast_log(LOG_ERROR,"Unsupported modem type. Sorry.\n");
 		return res;
 	}
-	
+
 	if (s->version==VERSION_V21 || s->version==VERSION_V23 || s->version==VERSION_BELL103) {
 		fsk_tx_power (modem_tx, s->txpower);
 		fsk_rx_signal_cutoff(modem_rx, s->rxcutoff);
@@ -532,13 +532,13 @@ static int softmodem_communicate(modem_session *s) {
 		v22bis_tx_power(v22_modem, s->txpower);
 		v22bis_rx_signal_cutoff(v22_modem, s->rxcutoff);
 	}
-	
+
 	//printf("comm: baud %i\n",btx_tx->baud_rate);
 	if (s->version==VERSION_V21 || s->version==VERSION_V23 || s->version==VERSION_BELL103)
 		ast_activate_generator(s->chan, &fsk_generator, modem_tx);
 	else if (s->version==VERSION_V22 || s->version==VERSION_V22BIS)
 		ast_activate_generator(s->chan, &v22_generator, v22_modem);
-	
+
 	while (!s->finished) {
 		res = ast_waitfor(s->chan, 20);
 		if (res < 0)
@@ -552,7 +552,7 @@ static int softmodem_communicate(modem_session *s) {
 			res = -1;
 			break;
 		}
-		
+
 		/* Check the frame type. Format also must be checked because there is a chance
 		   that a frame in old format was already queued before we set chanel format
 		   to slinear so it will still be received by ast_read */
@@ -573,18 +573,18 @@ static int softmodem_communicate(modem_session *s) {
 				}
 			}
 		}
-		
+
 		ast_frfree(inf);
 		inf = NULL;
 	}
-	
+
 	close(sock);
-	
+
 	if (s->version==VERSION_V22 || s->version==VERSION_V22BIS) {
 		v22bis_release(v22_modem);
 		v22bis_free(v22_modem);
 	}
-	
+
 	if (original_write_fmt != ast_format_slin) {
 		if (ast_set_write_format(s->chan, original_write_fmt) < 0)
 			ast_log(LOG_WARNING, "Unable to restore write format on '%s'\n", ast_channel_name(s->chan));
@@ -616,7 +616,7 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 		ast_log(LOG_ERROR, "Channel is NULL. Giving up.\n");
 		return -1;
 	}
-	
+
 	/* answer channel if not already answered */
 	if (ast_channel_state(chan) != AST_STATE_UP) {
 		res = ast_answer(chan);
@@ -625,7 +625,7 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 			return res;
 		}
 	}
-	
+
 	session.chan=chan;
 	session.finished=0;
 	session.rxcutoff=-35.0f;
@@ -636,15 +636,15 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 	session.stopbits=1;
 	session.ulmheader=0;
 	session.sendnull=0;
-	
+
 	parse=ast_strdupa(data);
 	AST_STANDARD_APP_ARGS(args,parse);
-	
+
 	if (args.host)
 		session.host=args.host;
 	else
 		session.host="localhost";
-	
+
 	if (args.port) {
 		session.port=atoi(args.port);
 		if ((session.port<0) || (session.port>65535)) {
@@ -653,21 +653,21 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 		}
 	} else
 		session.port=23;
-	
-	
+
+
 	if (args.options) {
 		ast_app_parse_options(additional_options, &options, option_args, args.options);
-		
+
 		if (ast_test_flag(&options, OPT_RX_CUTOFF)) {
 			if (!ast_strlen_zero(option_args[OPT_ARG_RX_CUTOFF]))
 				session.rxcutoff=atof(option_args[OPT_ARG_RX_CUTOFF]);
 		}
-		
+
 		if (ast_test_flag(&options, OPT_TX_POWER)) {
 			if (!ast_strlen_zero(option_args[OPT_ARG_TX_POWER]))
 				session.txpower=atof(option_args[OPT_ARG_TX_POWER]);
 		}
-		
+
 		if (ast_test_flag(&options, OPT_MODEM_VERSION)) {
 			if (!ast_strlen_zero(option_args[OPT_ARG_MODEM_VERSION])) {
 				if (strcmp(option_args[OPT_ARG_MODEM_VERSION],"V21")==0)
@@ -682,7 +682,7 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 					session.version=VERSION_V22BIS;
 			}
 		}
-		
+
 		if (ast_test_flag(&options, OPT_LSB_FIRST)) {
 			if (ast_test_flag(&options, OPT_MSB_FIRST)) {
 				ast_log(LOG_ERROR, "Please only set l or m flag, not both.\n");
@@ -690,18 +690,18 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 			}
 			session.lsb=1;
 		}
-		
+
 		if (ast_test_flag(&options, OPT_DATABITS)) {
 			if (!ast_strlen_zero(option_args[OPT_ARG_DATABITS])) {
 				session.databits = atoi(option_args[OPT_ARG_DATABITS]);
-				
+
 				if ((session.databits<5) || (session.databits>8)) {
 					ast_log(LOG_ERROR, "Only 5-8 data bits are supported.\n");
 					return -1;
 				}
 			}
 		}
-		
+
 		if (ast_test_flag(&options, OPT_STOPBITS)) {
 			if (!ast_strlen_zero(option_args[OPT_ARG_STOPBITS])) {
 				session.stopbits = atoi(option_args[OPT_ARG_STOPBITS]);
@@ -711,7 +711,7 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 				}
 			}
 		}
-		
+
 		if (ast_test_flag(&options, OPT_ULM_HEADER)) {
 			session.ulmheader = 1;
 		}
@@ -719,9 +719,9 @@ static int softmodem_exec(struct ast_channel *chan, const char *data) {
 			session.sendnull = 1;
 		}
 	}
-	
+
 	res=softmodem_communicate(&session);
-	
+
 	return res;
 }
 
